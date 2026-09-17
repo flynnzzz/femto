@@ -1,4 +1,3 @@
-#include <asm-generic/errno-base.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,24 +9,38 @@
 #define ESC_CLEAR "\x1b[2J"
 #define ESC_CURSTOP "\x1b[H"
 
+#define TERM_Y 24
+
 struct termios termios_original;
 
-static void editor_refresh_screen() {
-  write(STDIN_FILENO, ESC_CLEAR, 4);
-  write(STDIN_FILENO, ESC_CURSTOP, 3);
+void editor_draw_rows() {
+  for (int y = 0; y < TERM_Y; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
 }
 
-static void die(const char *msg) {
-  editor_refresh_screen();
+void editor_clear_screen() {
+  write(STDOUT_FILENO, ESC_CLEAR, 4);
+  write(STDOUT_FILENO, ESC_CURSTOP, 3);
+}
+
+void editor_refresh_screen() {
+  editor_clear_screen();
+  editor_draw_rows();
+  write(STDOUT_FILENO, ESC_CURSTOP, 3);
+}
+
+void die(const char *msg) {
+  editor_clear_screen();
   perror(msg);
   exit(1);
 }
-static void disable_raw_mode() {
+void disable_raw_mode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &termios_original) == -1)
     die("tcsetattr");
 }
 
-static void enable_raw_mode() {
+void enable_raw_mode() {
   if (tcgetattr(STDIN_FILENO, &termios_original) == -1)
     die("tcgetattr");
 
@@ -44,7 +57,7 @@ static void enable_raw_mode() {
     die("tcsetattr");
 }
 
-static char editor_read_key() {
+char editor_read_key() {
   int nread;
   char c;
   while ((nread = read(STDIN_FILENO, &c, 1) != 1))
@@ -55,7 +68,7 @@ static char editor_read_key() {
   return c;
 }
 
-static void editor_process_keys() {
+void editor_process_keys() {
   char c = editor_read_key();
 
   switch (c) {
