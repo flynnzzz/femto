@@ -1,6 +1,8 @@
+#include <asm-generic/ioctls.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -9,13 +11,28 @@
 #define ESC_CLEAR "\x1b[2J"
 #define ESC_CURSTOP "\x1b[H"
 
-#define TERM_Y 24
+struct editor_config {
+  int screenrows, screencols;
+  struct termios orig_termios;
+};
+struct editor_config E;
 
-struct termios termios_original;
+int windows_size(int *rows, int *cols) {
+  struct winsize ws;
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    return -1;
+  }
+
+  *cols = ws.ws_col;
+  *rows = ws.ws_row;
+  return 0;
+}
 
 void editor_draw_rows() {
-  for (int y = 0; y < TERM_Y; y++) {
-    write(STDOUT_FILENO, "~\r\n", 3);
+  for (int y = 0; y < E.screenrows; y++) {
+    write(STDOUT_FILENO, "~", 1);
+    if (y < E.screenrows - 1)
+      write(STDOUT_FILENO, "\r\n", 2);
   }
 }
 
@@ -35,18 +52,24 @@ void die(const char *msg) {
   perror(msg);
   exit(1);
 }
+
+void init_editor() {
+  if (windows_size(&E.screenrows, &E.screencols) == -1)
+    die("get_window_size");
+}
+
 void disable_raw_mode() {
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &termios_original) == -1)
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
     die("tcsetattr");
 }
 
 void enable_raw_mode() {
-  if (tcgetattr(STDIN_FILENO, &termios_original) == -1)
+  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1)
     die("tcgetattr");
 
   atexit(disable_raw_mode);
 
-  struct termios termios_new = termios_original;
+  struct termios termios_new = E.orig_termios;
   termios_new.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
   termios_new.c_iflag &= ~(IXON | ICRNL);
   termios_new.c_oflag &= ~(OPOST);
@@ -81,6 +104,7 @@ void editor_process_keys() {
 
 int main() {
   enable_raw_mode();
+  init_editor();
 
   while (1) {
     editor_refresh_screen();
